@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# $Id: _posix.py 1204 2011-10-24 19:19:01Z g.rodola $
+# $Id: _posix.py 1386 2012-06-27 15:44:36Z g.rodola $
 #
 # Copyright (c) 2009, Jay Loden, Giampaolo Rodola'. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
@@ -13,11 +13,13 @@ import subprocess
 import time
 import sys
 import os
+import datetime
 
 import psutil
 
+from psutil._compat import PY3
 from test_psutil import (get_test_subprocess, reap_children, PYTHON, LINUX, OSX,
-                         ignore_access_denied, sh)
+                         BSD, ignore_access_denied, sh, skipIf)
 
 
 def ps(cmd):
@@ -28,7 +30,7 @@ def ps(cmd):
         cmd = cmd.replace(" --no-headers ", " ")
     p = subprocess.Popen(cmd, shell=1, stdout=subprocess.PIPE)
     output = p.communicate()[0].strip()
-    if sys.version_info >= (3,):
+    if PY3:
         output = str(output, sys.stdout.encoding)
     if not LINUX:
         output = output.split('\n')[1]
@@ -44,7 +46,8 @@ class PosixSpecificTestCase(unittest.TestCase):
     # for ps -o arguments see: http://unixhelp.ed.ac.uk/CGI/man-cgi?ps
 
     def setUp(self):
-        self.pid = get_test_subprocess([PYTHON, "-E", "-O"]).pid
+        self.pid = get_test_subprocess([PYTHON, "-E", "-O"],
+                                       stdin=subprocess.PIPE).pid
 
     def tearDown(self):
         reap_children()
@@ -95,6 +98,14 @@ class PosixSpecificTestCase(unittest.TestCase):
         name_psutil = psutil.Process(self.pid).name.lower()
         self.assertEqual(name_ps, name_psutil)
 
+    @skipIf(OSX or BSD)
+    def test_process_create_time(self):
+        time_ps = ps("ps --no-headers -o start -p %s" %self.pid).split(' ')[0]
+        time_psutil = psutil.Process(self.pid).create_time
+        time_psutil = datetime.datetime.fromtimestamp(
+                        time_psutil).strftime("%H:%M:%S")
+        self.assertEqual(time_ps, time_psutil)
+
     def test_process_exe(self):
         ps_pathname = ps("ps --no-headers -o command -p %s" %self.pid).split(' ')[0]
         psutil_pathname = psutil.Process(self.pid).exe
@@ -120,7 +131,7 @@ class PosixSpecificTestCase(unittest.TestCase):
         # other processes in the meantime
         p = get_test_subprocess(["ps", "ax", "-o", "pid"], stdout=subprocess.PIPE)
         output = p.communicate()[0].strip()
-        if sys.version_info >= (3,):
+        if PY3:
             output = str(output, sys.stdout.encoding)
         output = output.replace('PID', '')
         p.wait()
@@ -142,11 +153,11 @@ class PosixSpecificTestCase(unittest.TestCase):
             difference = [x for x in pids_psutil if x not in pids_ps] + \
                          [x for x in pids_ps if x not in pids_psutil]
             self.fail("difference: " + str(difference))
-            
+
     def test_nic_names(self):
         p = subprocess.Popen("ifconfig -a", shell=1, stdout=subprocess.PIPE)
         output = p.communicate()[0].strip()
-        if sys.version_info >= (3,):
+        if PY3:
             output = str(output, sys.stdout.encoding)
         for nic in psutil.network_io_counters(pernic=True).keys():
             for line in output.split():
@@ -155,10 +166,18 @@ class PosixSpecificTestCase(unittest.TestCase):
             else:
                 self.fail("couldn't find %s nic in 'ifconfig -a' output" % nic)
 
+    def test_get_users(self):
+        out = sh("who")
+        lines = out.split('\n')
+        users = [x.split()[0] for x in lines]
+        self.assertEqual(len(users), len(psutil.get_users()))
+        terminals = [x.split()[1] for x in lines]
+        for u in psutil.get_users():
+            self.assertTrue(u.name in users, u.name)
+            self.assertTrue(u.terminal in terminals, u.terminal)
+
 
 if __name__ == '__main__':
     test_suite = unittest.TestSuite()
     test_suite.addTest(unittest.makeSuite(PosixSpecificTestCase))
     unittest.TextTestRunner(verbosity=2).run(test_suite)
-
-

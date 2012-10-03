@@ -1,5 +1,5 @@
 /*
- * $Id: _psutil_linux.c 1166 2011-10-17 22:18:07Z g.rodola $
+ * $Id: _psutil_linux.c 1498 2012-07-24 21:41:28Z g.rodola $
  *
  * Copyright (c) 2009, Jay Loden, Giampaolo Rodola'. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
@@ -12,6 +12,8 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <mntent.h>
+#include <utmp.h>
+#include <sched.h>
 #include <sys/syscall.h>
 #include <sys/sysinfo.h>
 #include <linux/unistd.h>
@@ -100,47 +102,150 @@ linux_ioprio_set(PyObject* self, PyObject* args)
 static PyObject*
 get_disk_partitions(PyObject* self, PyObject* args)
 {
-    FILE *file;
+    FILE *file = NULL;
     struct mntent *entry;
     PyObject* py_retlist = PyList_New(0);
-    PyObject* py_tuple;
+    PyObject* py_tuple = NULL;
 
     // MOUNTED constant comes from mntent.h and it's == '/etc/mtab'
     Py_BEGIN_ALLOW_THREADS
     file = setmntent(MOUNTED, "r");
     Py_END_ALLOW_THREADS
     if ((file == 0) || (file == NULL)) {
-        return PyErr_SetFromErrno(PyExc_OSError);
+        PyErr_SetFromErrno(PyExc_OSError);
+        goto error;
     }
 
     while ((entry = getmntent(file))) {
         if (entry == NULL) {
-            endmntent(file);
-            return PyErr_Format(PyExc_RuntimeError, "getmntent() failed");
+            PyErr_Format(PyExc_RuntimeError, "getmntent() failed");
+            goto error;
         }
-        py_tuple = Py_BuildValue("(sss)", entry->mnt_fsname,  // device
-                                          entry->mnt_dir,     // mount point
-                                          entry->mnt_type);   // fs type
-        PyList_Append(py_retlist, py_tuple);
-        Py_XDECREF(py_tuple);
+        py_tuple = Py_BuildValue("(ssss)", entry->mnt_fsname,  // device
+                                           entry->mnt_dir,     // mount point
+                                           entry->mnt_type,    // fs type
+                                           entry->mnt_opts);   // options
+        if (! py_tuple)
+            goto error;
+        if (PyList_Append(py_retlist, py_tuple))
+            goto error;
+        Py_DECREF(py_tuple);
     }
-
     endmntent(file);
     return py_retlist;
+
+error:
+    if (file != NULL)
+        endmntent(file);
+    Py_XDECREF(py_tuple);
+    Py_DECREF(py_retlist);
+    return NULL;
 }
 
 
 /*
- * Return physical memory usage as a (total, free, buffer) tuple.
+ * A wrapper around sysinfo(), return system memory usage statistics.
  */
 static PyObject*
-get_physmem(PyObject* self, PyObject* args)
+get_sysinfo(PyObject* self, PyObject* args)
 {
     struct sysinfo info;
     if (sysinfo(&info) != 0) {
         return PyErr_SetFromErrno(PyExc_OSError);
     }
-    return Py_BuildValue("(lll)", info.totalram, info.freeram, info.bufferram);
+    return Py_BuildValue("(KKKKKK)",
+        (unsigned long long)info.totalram  * info.mem_unit,   // total
+        (unsigned long long)info.freeram   * info.mem_unit,   // free
+        (unsigned long long)info.bufferram * info.mem_unit,   // buffer
+        (unsigned long long)info.sharedram * info.mem_unit,   // shared
+        (unsigned long long)info.totalswap * info.mem_unit,   // swap tot
+        (unsigned long long)info.freeswap  * info.mem_unit);  // swap free
+    // TODO: we can also determine BOOT_TIME here
+}
+
+
+/*
+ * Return process CPU affinity as a Python long (the bitmask)
+ */
+static PyObject*
+get_process_cpu_affinity(PyObject* self, PyObject* args)
+{
+    unsigned long mask;
+    unsigned int len = sizeof(mask);
+    long pid;
+
+    if (!PyArg_ParseTuple(args, "i", &pid)) {
+        return NULL;
+    }
+    if (sched_getaffinity(pid, len, (cpu_set_t *)&mask) < 0) {
+        return PyErr_SetFromErrno(PyExc_OSError);
+    }
+    return Py_BuildValue("l", mask);
+}
+
+
+/*
+ * Set process CPU affinity; expects a bitmask
+ */
+static PyObject*
+set_process_cpu_affinity(PyObject* self, PyObject* args)
+{
+    unsigned long mask;
+    unsigned int len = sizeof(mask);
+    long pid;
+
+    if (!PyArg_ParseTuple(args, "ll", &pid, &mask)) {
+        return NULL;
+    }
+    if (sched_setaffinity(pid, len, (cpu_set_t *)&mask)) {
+        return PyErr_SetFromErrno(PyExc_OSError);
+    }
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+
+/*
+ * Return currently connected users as a list of tuples.
+ */
+static PyObject*
+get_system_users(PyObject* self, PyObject* args)
+{
+    PyObject *ret_list = PyList_New(0);
+    PyObject *tuple = NULL;
+    PyObject *user_proc = NULL;
+    struct utmp *ut;
+
+    setutent();
+    while (NULL != (ut = getutent())) {
+        tuple = NULL;
+        user_proc = NULL;
+        if (ut->ut_type == USER_PROCESS)
+            user_proc = Py_True;
+        else
+            user_proc = Py_False;
+        tuple = Py_BuildValue("(sssfO)",
+            ut->ut_user,              // username
+            ut->ut_line,              // tty
+            ut->ut_host,              // hostname
+            (float)ut->ut_tv.tv_sec,  // tstamp
+            user_proc                 // (bool) user process
+        );
+        if (! tuple)
+            goto error;
+        if (PyList_Append(ret_list, tuple))
+            goto error;
+        Py_DECREF(tuple);
+    }
+    endutent();
+    return ret_list;
+
+error:
+    Py_XDECREF(tuple);
+    Py_XDECREF(user_proc);
+    Py_DECREF(ret_list);
+    endutent();
+    return NULL;
 }
 
 
@@ -159,8 +264,14 @@ PsutilMethods[] =
      {"get_disk_partitions", get_disk_partitions, METH_VARARGS,
         "Return disk mounted partitions as a list of tuples including "
         "device, mount point and filesystem type"},
-     {"get_physmem", get_physmem, METH_VARARGS,
-        "The physical memory usage as a (total, free, buffer) tuple."},
+     {"get_sysinfo", get_sysinfo, METH_VARARGS,
+        "A wrapper around sysinfo(), return system memory usage statistics"},
+     {"get_process_cpu_affinity", get_process_cpu_affinity, METH_VARARGS,
+        "Return process CPU affinity as a Python long (the bitmask)."},
+     {"set_process_cpu_affinity", set_process_cpu_affinity, METH_VARARGS,
+        "Set process CPU affinity; expects a bitmask."},
+     {"get_system_users", get_system_users, METH_VARARGS,
+        "Return currently connected users as a list of tuples"},
 
      {NULL, NULL, 0, NULL}
 };
@@ -225,4 +336,3 @@ void init_psutil_linux(void)
     return module;
 #endif
 }
-

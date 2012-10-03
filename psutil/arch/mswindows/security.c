@@ -1,5 +1,5 @@
 /*
- * $Id: security.c 1142 2011-10-05 18:45:49Z g.rodola $
+ * $Id: security.c 1296 2012-04-25 01:29:43Z david.daeschler@gmail.com $
  *
  * Copyright (c) 2009, Jay Loden, Giampaolo Rodola'. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
@@ -71,13 +71,13 @@ int HasSystemPrivilege(HANDLE hProcess) {
 
     if (pBuffer == NULL) {
         PyErr_SetFromWindowsErr(0);
-        LocalFree(pBuffer);
+        free(pBuffer);
         return -1;
     }
 
     if (! GetTokenInformation(hToken, TokenPrivileges, pBuffer, dwSize, &dwSize) ) {
         PyErr_SetFromWindowsErr(0);
-        LocalFree(pBuffer);
+        free(pBuffer);
         return -1;
     }
 

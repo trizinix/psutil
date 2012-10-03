@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# $Id: iotop.py 1213 2011-10-29 03:30:41Z g.rodola $
+# $Id: iotop.py 1236 2011-12-13 19:00:35Z g.rodola $
 #
 # Copyright (c) 2009, Jay Loden, Giampaolo Rodola'. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
@@ -72,7 +72,7 @@ def bytes2human(n):
         if n >= prefix[s]:
             value = float(n) / prefix[s]
             return '%.2f %s/s' % (value, s)
-    return "0.00 B/s"
+    return '%.2f B/s' % (n)
 
 def poll(interval):
     """Calculate IO usage by comparing IO statics before and
@@ -152,10 +152,10 @@ def main():
         interval = 0
         while 1:
             args = poll(interval)
-            refresh_window(*args) 
+            refresh_window(*args)
             interval = 1
     except (KeyboardInterrupt, SystemExit):
-        print
+        pass
 
 if __name__ == '__main__':
     main()

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# $Id: disk_usage.py 1143 2011-10-05 19:11:59Z g.rodola $
+# $Id: disk_usage.py 1340 2012-06-09 13:42:21Z g.rodola $
 #
 # Copyright (c) 2009, Jay Loden, Giampaolo Rodola'. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
@@ -12,11 +12,15 @@ List all mounted disk partitions a-la "df -h" command.
 
 import sys
 import psutil
+from psutil._compat import print_
 
-def convert_bytes(n):
-    if n == 0:
-        return "0B"
-    symbols = ('k', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y')
+def bytes2human(n):
+    # http://code.activestate.com/recipes/578019
+    # >>> bytes2human(10000)
+    # '9.8K'
+    # >>> bytes2human(100001221)
+    # '95.4M'
+    symbols = ('K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y')
     prefix = {}
     for i, s in enumerate(symbols):
         prefix[s] = 1 << (i+1)*10
@@ -24,20 +28,21 @@ def convert_bytes(n):
         if n >= prefix[s]:
             value = float(n) / prefix[s]
             return '%.1f%s' % (value, s)
+    return "%sB" % n
 
 
 def main():
     templ = "%-17s %8s %8s %8s %5s%% %9s  %s"
-    print templ % ("Device", "Total", "Used", "Free", "Use ", "Type", "Mount")
+    print_(templ % ("Device", "Total", "Used", "Free", "Use ", "Type", "Mount"))
     for part in psutil.disk_partitions(all=False):
         usage = psutil.disk_usage(part.mountpoint)
-        print templ % (part.device,
-                       convert_bytes(usage.total),
-                       convert_bytes(usage.used),
-                       convert_bytes(usage.free),
-                       int(usage.percent),
-                       part.fstype,
-                       part.mountpoint)
+        print_(templ % (part.device,
+                        bytes2human(usage.total),
+                        bytes2human(usage.used),
+                        bytes2human(usage.free),
+                        int(usage.percent),
+                        part.fstype,
+                        part.mountpoint))
 
 if __name__ == '__main__':
     sys.exit(main())

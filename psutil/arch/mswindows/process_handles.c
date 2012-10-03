@@ -1,5 +1,5 @@
 /*
- * $Id: process_handles.c 1142 2011-10-05 18:45:49Z g.rodola $
+ * $Id: process_handles.c 1463 2012-07-18 13:06:49Z g.rodola $
  *
  * Copyright (c) 2009, Jay Loden, Giampaolo Rodola'. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
@@ -151,11 +151,15 @@ get_open_files(long pid, HANDLE processHandle)
         handleInfoSize,
         NULL
         )) == STATUS_INFO_LENGTH_MISMATCH)
+    {
         handleInfo = (PSYSTEM_HANDLE_INFORMATION)realloc(handleInfo, handleInfoSize *= 2);
+    }
 
     /* NtQuerySystemInformation stopped giving us STATUS_INFO_LENGTH_MISMATCH. */
     if (!NT_SUCCESS(status)) {
         //printf("NtQuerySystemInformation failed!\n");
+        Py_DECREF(filesList);
+        free(handleInfo);
         return NULL;
     }
 
@@ -163,10 +167,12 @@ get_open_files(long pid, HANDLE processHandle)
     {
         SYSTEM_HANDLE            handle = handleInfo->Handles[i];
         HANDLE                   dupHandle = NULL;
-        POBJECT_TYPE_INFORMATION objectTypeInfo;
+        POBJECT_TYPE_INFORMATION objectTypeInfo = NULL;
         PVOID                    objectNameInfo;
         UNICODE_STRING           objectName;
         ULONG                    returnLength;
+        fileFromWchar = NULL;
+        arg = NULL;
 
         /* Check if this handle belongs to the PID the user specified. */
         if (handle.ProcessId != pid)
@@ -207,6 +213,7 @@ get_open_files(long pid, HANDLE processHandle)
             )))
         {
             //printf("[%#x] Error!\n", handle.Handle);
+            free(objectTypeInfo);
             CloseHandle(dupHandle);
             continue;
         }
@@ -260,13 +267,19 @@ get_open_files(long pid, HANDLE processHandle)
                 //printf("%.*S\n", objectName.Length / 2, objectName.Buffer);
                 fileFromWchar = PyUnicode_FromWideChar(objectName.Buffer,
                                                        fileNameLength);
+                if (fileFromWchar == NULL)
+                    goto error_py_fun;
                 #if PY_MAJOR_VERSION >= 3
                     arg = Py_BuildValue("N", PyUnicode_AsUTF8String(fileFromWchar));
                 #else
                     arg = Py_BuildValue("N", PyUnicode_FromObject(fileFromWchar));
                 #endif
+                if (!arg)
+                    goto error_py_fun;
                 Py_XDECREF(fileFromWchar);
-                PyList_Append(filesList, arg);
+                fileFromWchar = NULL;
+                if (PyList_Append(filesList, arg))
+                    goto error_py_fun;
                 Py_XDECREF(arg);
             }
             /*
@@ -300,5 +313,10 @@ get_open_files(long pid, HANDLE processHandle)
     free(handleInfo);
     CloseHandle(processHandle);
     return filesList;
-}
 
+error_py_fun:
+    Py_XDECREF(arg);
+    Py_XDECREF(fileFromWchar);
+    Py_DECREF(filesList);
+    return NULL;
+}

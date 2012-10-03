@@ -52,7 +52,7 @@ def print_line(line, highlight=False):
         lineno += 1
 # --- curses stuff
 
-        
+
 def bytes2human(n):
     """
     >>> bytes2human(10000)
@@ -68,7 +68,7 @@ def bytes2human(n):
         if n >= prefix[s]:
             value = float(n) / prefix[s]
             return '%.2f %s' % (value, s)
-    return "0.00 B"
+    return '%.2f B' % (n)
 
 def poll(interval):
     """Retrieve raw stats within an interval window."""
@@ -79,31 +79,32 @@ def poll(interval):
     tot_after = psutil.network_io_counters()
     pnic_after = psutil.network_io_counters(pernic=True)
     return (tot_before, tot_after, pnic_before, pnic_after)
-    
+
 
 def refresh_window(tot_before, tot_after, pnic_before, pnic_after):
     """Print stats on screen."""
     global lineno
-    
-    # totals   
+
+    # totals
     print_line("total bytes:           sent: %-10s   received: %s" \
           % (bytes2human(tot_after.bytes_sent),
              bytes2human(tot_after.bytes_recv))
-    )   
+    )
     print_line("total packets:         sent: %-10s   received: %s" \
           % (tot_after.packets_sent, tot_after.packets_recv)
     )
-    
-    # per network interface
+
+
+    # per-network interface details: let's sort network interfaces so
+    # that the ones which generated more traffic are shown first
     print_line("")
-    for nic in pnic_after:
-        stats_before = pnic_before[nic]
-        stats_after = pnic_after[nic]
+    nic_names = list(pnic_after.keys())
+    nic_names.sort(key=lambda x: sum(pnic_after[x]), reverse=True)
+    for name in nic_names:
+        stats_before = pnic_before[name]
+        stats_after = pnic_after[name]
         templ = "%-15s %15s %15s"
-        print_line(templ % (
-                nic, "TOTAL", "PER-SEC"),
-            highlight=True
-        )
+        print_line(templ % (name, "TOTAL", "PER-SEC"), highlight=True)
         print_line(templ % (
             "bytes-sent",
             bytes2human(stats_after.bytes_sent),
@@ -134,10 +135,10 @@ def main():
         interval = 0
         while 1:
             args = poll(interval)
-            refresh_window(*args) 
+            refresh_window(*args)
             interval = 1
     except (KeyboardInterrupt, SystemExit):
-        print
+        pass
 
 if __name__ == '__main__':
     main()
