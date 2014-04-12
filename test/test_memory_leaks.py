@@ -1,8 +1,6 @@
 #!/usr/bin/env python
-#
-# $Id: test_memory_leaks.py 1499 2012-07-25 12:42:31Z g.rodola $
-#
-# Copyright (c) 2009, Jay Loden, Giampaolo Rodola'. All rights reserved.
+
+# Copyright (c) 2009, Giampaolo Rodola'. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -12,30 +10,33 @@ functions many times and compare process memory usage before and
 after the calls.  It might produce false positives.
 """
 
-import os
 import gc
-import unittest
-import time
+import os
 import socket
+import sys
 import threading
+import time
 import types
+
+if sys.version_info < (2, 7):
+    import unittest2 as unittest  # https://pypi.python.org/pypi/unittest2
+else:
+    import unittest
 
 import psutil
 import psutil._common
-from psutil._compat import PY3, callable, xrange
-from test_psutil import POSIX, LINUX, WINDOWS, OSX, BSD, TESTFN
-from test_psutil import (reap_children, skipUnless, skipIf, supports_ipv6,
-                         safe_remove, get_test_subprocess)
 
-# disable cache for Process class properties
-psutil._common.cached_property.enabled = False
+from psutil._compat import callable, xrange
+from test_psutil import WINDOWS, POSIX, OSX, LINUX, SUNOS, TESTFN
+from test_psutil import (reap_children, supports_ipv6, safe_remove,
+                         get_test_subprocess)
+
 
 LOOPS = 1000
 TOLERANCE = 4096
 
 
 class Base(unittest.TestCase):
-
     proc = psutil.Process(os.getpid())
 
     def execute(self, function, *args, **kwargs):
@@ -75,11 +76,11 @@ class Base(unittest.TestCase):
             rss3 = self.get_mem()
             difference = rss3 - rss2
             if rss3 > rss2:
-                self.fail("rss2=%s, rss3=%s, difference=%s" \
+                self.fail("rss2=%s, rss3=%s, difference=%s"
                           % (rss2, rss3, difference))
 
     def get_mem(self):
-        return psutil.Process(os.getpid()).get_memory_info()[0]
+        return psutil.Process(os.getpid()).memory_info()[0]
 
     def call(self, *args, **kwargs):
         raise NotImplementedError("must be implemented in subclass")
@@ -95,7 +96,10 @@ class TestProcessObjectLeaks(Base):
         for attr in [x for x in dir(self) if x.startswith('test')]:
             if attr[5:] not in supported_attrs:
                 meth = getattr(self, attr)
-                @skipIf(True)
+                name = meth.__func__.__name__.replace('test_', '')
+
+                @unittest.skipIf(True,
+                                 "%s not supported on this platform" % name)
                 def test_(self):
                     pass
                 setattr(self, attr, types.MethodType(test_, self))
@@ -135,21 +139,25 @@ class TestProcessObjectLeaks(Base):
     def test_status(self):
         self.execute('status')
 
-    def test_get_nice(self):
-        self.execute('get_nice')
+    def test_nice(self):
+        self.execute('nice')
 
     def test_set_nice(self):
-        niceness = psutil.Process(os.getpid()).get_nice()
+        niceness = psutil.Process(os.getpid()).nice()
         self.execute('set_nice', niceness)
 
-    def test_get_io_counters(self):
-        self.execute('get_io_counters')
+    def test_io_counters(self):
+        self.execute('io_counters')
 
-    def test_get_ionice(self):
-        self.execute('get_ionice')
+    def test_ionice(self):
+        self.execute('ionice')
 
     def test_set_ionice(self):
-        self.execute('set_ionice', psutil.IOPRIO_CLASS_NONE)
+        if WINDOWS:
+            value = psutil.Process(os.getpid()).ionice()
+            self.execute('set_ionice', value)
+        else:
+            self.execute('set_ionice', psutil.IOPRIO_CLASS_NONE)
 
     def test_username(self):
         self.execute('username')
@@ -157,60 +165,71 @@ class TestProcessObjectLeaks(Base):
     def test_create_time(self):
         self.execute('create_time')
 
-    def test_get_num_threads(self):
-        self.execute('get_num_threads')
+    def test_num_threads(self):
+        self.execute('num_threads')
 
-    def test_get_num_handles(self):
-        self.execute('get_num_handles')
+    def test_num_handles(self):
+        self.execute('num_handles')
 
-    def test_get_num_fds(self):
-        self.execute('get_num_fds')
+    def test_num_fds(self):
+        self.execute('num_fds')
 
-    def test_get_threads(self):
-        self.execute('get_threads')
+    def test_threads(self):
+        self.execute('threads')
 
-    def test_get_cpu_times(self):
-        self.execute('get_cpu_times')
+    def test_cpu_times(self):
+        self.execute('cpu_times')
 
-    def test_get_memory_info(self):
-        self.execute('get_memory_info')
+    def test_memory_info(self):
+        self.execute('memory_info')
 
-    def test_get_ext_memory_info(self):
-        self.execute('get_ext_memory_info')
+    def test_memory_info_ex(self):
+        self.execute('memory_info_ex')
 
     def test_terminal(self):
         self.execute('terminal')
 
-    @skipUnless(WINDOWS)
+    @unittest.skipIf(POSIX, "not worth being tested on POSIX (pure python)")
     def test_resume(self):
         self.execute('resume')
 
-    def test_getcwd(self):
-        self.execute('getcwd')
+    def test_cwd(self):
+        self.execute('cwd')
 
-    def test_get_cpu_affinity(self):
-        self.execute('get_cpu_affinity')
+    def test_cpu_affinity(self):
+        self.execute('cpu_affinity')
 
     def test_set_cpu_affinity(self):
-        affinity = psutil.Process(os.getpid()).get_cpu_affinity()
+        affinity = psutil.Process(os.getpid()).cpu_affinity()
         self.execute('set_cpu_affinity', affinity)
 
-    def test_get_open_files(self):
+    def test_open_files(self):
         safe_remove(TESTFN)  # needed after UNIX socket test has run
         f = open(TESTFN, 'w')
         try:
-            self.execute('get_open_files')
+            self.execute('open_files')
         finally:
             f.close()
 
     # OSX implementation is unbelievably slow
-    @skipIf(OSX)
-    def test_get_memory_maps(self):
-        self.execute('get_memory_maps')
+    @unittest.skipIf(OSX, "OSX implementation is too slow")
+    def test_memory_maps(self):
+        self.execute('memory_maps')
+
+    @unittest.skipUnless(LINUX, "feature not supported on this platform")
+    def test_rlimit(self):
+        self.execute('rlimit', psutil.RLIMIT_NOFILE)
+
+    @unittest.skipUnless(LINUX, "feature not supported on this platform")
+    def test_set_rlimit(self):
+        limit = psutil.Process(os.getpid()).rlimit(psutil.RLIMIT_NOFILE)
+        self.execute('set_rlimit', psutil.RLIMIT_NOFILE, limit)
 
     # Linux implementation is pure python so since it's slow we skip it
-    @skipIf(LINUX)
-    def test_get_connections(self):
+    @unittest.skipIf(LINUX, "not worth being tested on Linux (pure python)")
+    # Windows implementation is based on a single system-wide function
+    @unittest.skipIf(WINDOWS, "tested later")
+    def test_connections(self):
         def create_socket(family, type):
             sock = socket.socket(family, type)
             sock.bind(('', 0))
@@ -230,8 +249,14 @@ class TestProcessObjectLeaks(Base):
             s.bind(TESTFN)
             s.listen(1)
             socks.append(s)
+        kind = 'all'
+        # TODO: UNIX sockets are temporarily implemented by parsing
+        # 'pfiles' cmd  output; we don't want that part of the code to
+        # be executed.
+        if SUNOS:
+            kind = 'inet'
         try:
-            self.execute('get_connections', kind='all')
+            self.execute('connections', kind=kind)
         finally:
             for s in socks:
                 s.close()
@@ -242,6 +267,7 @@ DEAD_PROC = psutil.Process(p.pid)
 DEAD_PROC.kill()
 DEAD_PROC.wait()
 del p
+
 
 class TestProcessObjectLeaksZombie(TestProcessObjectLeaks):
     """Same as above but looks for leaks occurring when dealing with
@@ -275,15 +301,32 @@ class TestModuleFunctionsLeaks(Base):
     def call(self, function, *args, **kwargs):
         obj = getattr(psutil, function)
         if callable(obj):
-            retvalue = obj(*args, **kwargs)
+            obj(*args, **kwargs)
 
-    @skipIf(POSIX)
+    @unittest.skipIf(LINUX, "not worth being tested on POSIX (pure python)")
+    def test_cpu_count_logical(self):
+        psutil.cpu_count = psutil._psplatform.cpu_count_logical
+        self.execute('cpu_count')
+
+    @unittest.skipIf(LINUX, "not worth being tested on POSIX (pure python)")
+    def test_cpu_count_physical(self):
+        psutil.cpu_count = psutil._psplatform.cpu_count_physical
+        self.execute('cpu_count')
+
+    @unittest.skipIf(LINUX, "not worth being tested on POSIX (pure python)")
+    def test_boot_time(self):
+        self.execute('boot_time')
+
+    @unittest.skipIf(POSIX, "not worth being tested on POSIX (pure python)")
     def test_pid_exists(self):
         self.execute('pid_exists', os.getpid())
 
     def test_virtual_memory(self):
         self.execute('virtual_memory')
 
+    # TODO: remove this skip when this gets fixed
+    @unittest.skipIf(SUNOS,
+                     "not worth being tested on SUNOS (uses a subprocess)")
     def test_swap_memory(self):
         self.execute('swap_memory')
 
@@ -293,33 +336,39 @@ class TestModuleFunctionsLeaks(Base):
     def test_per_cpu_times(self):
         self.execute('cpu_times', percpu=True)
 
-    @skipUnless(WINDOWS)
+    @unittest.skipIf(POSIX, "not worth being tested on POSIX (pure python)")
     def test_disk_usage(self):
         self.execute('disk_usage', '.')
 
     def test_disk_partitions(self):
         self.execute('disk_partitions')
 
-    def test_network_io_counters(self):
-        self.execute('network_io_counters')
+    def test_net_io_counters(self):
+        self.execute('net_io_counters')
 
     def test_disk_io_counters(self):
         self.execute('disk_io_counters')
 
     # XXX - on Windows this produces a false positive
-    @skipIf(WINDOWS)
-    def test_get_users(self):
-        self.execute('get_users')
+    @unittest.skipIf(WINDOWS, "XXX produces a false positive on Windows")
+    def test_users(self):
+        self.execute('users')
+
+    @unittest.skipIf(POSIX, "not worth being tested on POSIX (pure python)")
+    def test_net_connections(self):
+        self.execute('net_connections')
 
 
 def test_main():
     test_suite = unittest.TestSuite()
     tests = [TestProcessObjectLeaksZombie,
              TestProcessObjectLeaks,
-             TestModuleFunctionsLeaks,]
+             TestModuleFunctionsLeaks]
     for test in tests:
         test_suite.addTest(unittest.makeSuite(test))
-    unittest.TextTestRunner(verbosity=2).run(test_suite)
+    result = unittest.TextTestRunner(verbosity=2).run(test_suite)
+    return result.wasSuccessful()
 
 if __name__ == '__main__':
-    test_main()
+    if not test_main():
+        sys.exit(1)

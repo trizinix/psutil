@@ -1,37 +1,53 @@
 #!/usr/bin/env python
-#
-# $Id: _psposix.py 1409 2012-07-04 08:21:06Z g.rodola $
-#
-# Copyright (c) 2009, Jay Loden, Giampaolo Rodola'. All rights reserved.
+
+# Copyright (c) 2009, Giampaolo Rodola'. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 """Routines common to all posix systems."""
 
-import os
 import errno
-import psutil
+import glob
+import os
 import sys
 import time
-import glob
 
-from psutil.error import TimeoutExpired
-from psutil._common import nt_diskinfo, usage_percent
+from psutil._common import sdiskusage, usage_percent, memoize
+from psutil._compat import PY3, unicode
+
+
+class TimeoutExpired(Exception):
+    pass
 
 
 def pid_exists(pid):
     """Check whether pid exists in the current process table."""
-    if not isinstance(pid, int):
-        raise TypeError('an integer is required')
-    if pid < 0:
-        return False
+    if pid == 0:
+        # According to "man 2 kill" PID 0 has a special meaning:
+        # it refers to <<every process in the process group of the
+        # calling process>> so we don't want to go any further.
+        # If we get here it means this UNIX platform *does* have
+        # a process with id 0.
+        return True
     try:
         os.kill(pid, 0)
     except OSError:
-        e = sys.exc_info()[1]
-        return e.errno == errno.EPERM
+        err = sys.exc_info()[1]
+        if err.errno == errno.ESRCH:
+            # ESRCH == No such process
+            return False
+        elif err.errno == errno.EPERM:
+            # EPERM clearly means there's a process to deny access to
+            return True
+        else:
+            # According to "man 2 kill" possible error values are
+            # (EINVAL, EPERM, ESRCH) therefore we should never get
+            # here. If we do let's be explicit in considering this
+            # an error.
+            raise err
     else:
         return True
+
 
 def wait_pid(pid, timeout=None):
     """Wait for process with pid 'pid' to terminate and return its
@@ -46,14 +62,15 @@ def wait_pid(pid, timeout=None):
     """
     def check_timeout(delay):
         if timeout is not None:
-            if time.time() >= stop_at:
-                raise TimeoutExpired(pid)
+            if timer() >= stop_at:
+                raise TimeoutExpired()
         time.sleep(delay)
         return min(delay * 2, 0.04)
 
+    timer = getattr(time, 'monotonic', time.time)
     if timeout is not None:
         waitcall = lambda: os.waitpid(pid, os.WNOHANG)
-        stop_at = time.time() + timeout
+        stop_at = timer() + timeout
     else:
         waitcall = lambda: os.waitpid(pid, 0)
 
@@ -97,9 +114,24 @@ def wait_pid(pid, timeout=None):
                 # should never happen
                 raise RuntimeError("unknown process exit status")
 
-def get_disk_usage(path):
+
+def disk_usage(path):
     """Return disk usage associated with path."""
-    st = os.statvfs(path)
+    try:
+        st = os.statvfs(path)
+    except UnicodeEncodeError:
+        if not PY3 and isinstance(path, unicode):
+            # this is a bug with os.statvfs() and unicode on
+            # Python 2, see:
+            # - https://code.google.com/p/psutil/issues/detail?id=416
+            # - http://bugs.python.org/issue18695
+            try:
+                path = path.encode(sys.getfilesystemencoding())
+            except UnicodeEncodeError:
+                pass
+            st = os.statvfs(path)
+        else:
+            raise
     free = (st.f_bavail * st.f_frsize)
     total = (st.f_blocks * st.f_frsize)
     used = (st.f_blocks - st.f_bfree) * st.f_frsize
@@ -107,12 +139,19 @@ def get_disk_usage(path):
     # NB: the percentage is -5% than what shown by df due to
     # reserved blocks that we are currently not considering:
     # http://goo.gl/sWGbH
-    return nt_diskinfo(total, used, free, percent)
+    return sdiskusage(total, used, free, percent)
 
+
+@memoize
 def _get_terminal_map():
     ret = {}
     ls = glob.glob('/dev/tty*') + glob.glob('/dev/pts/*')
     for name in ls:
         assert name not in ret
-        ret[os.stat(name).st_rdev] = name
+        try:
+            ret[os.stat(name).st_rdev] = name
+        except OSError:
+            err = sys.exc_info()[1]
+            if err.errno != errno.ENOENT:
+                raise
     return ret

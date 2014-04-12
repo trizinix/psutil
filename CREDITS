@@ -1,32 +1,33 @@
-
 Intro
 =====
 
-We would like to recognize some of the people who have been instrumental in the
+I would like to recognize some of the people who have been instrumental in the
 development of psutil.
-I'm sure we are forgetting some people (feel free to email us), but here is a
+I'm sure I'm forgetting some people (feel free to email me), but here is a
 short list.
 It's modeled after the Linux CREDITS file where the fields are:
 name (N), e-mail (E), web-address (W), country (C), description (D), (I) issues
 (issue tracker is at http://code.google.com/p/psutil/issues/list).
 Really thanks to all of you.
 
+- Giampaolo
 
-Maintainers
-===========
+Author
+======
 
 N: Giampaolo Rodola'
 C: Italy
 E: g.rodola@gmail.com
+W: http://www.linkedin.com/in/grodola
+
+Contributors
+============
 
 N: Jay Loden
 C: NJ, USA
 E: jloden@gmail.com
+D: original co-author, initial design/bootstrap and continuing bug fixes
 W: http://www.jayloden.com
-
-
-Contributors
-============
 
 N: Jeremy Whitlock
 E: jcscoobyrs@gmail.com
@@ -41,6 +42,11 @@ N: Yan Raber
 C: Bologna, Italy
 E: yanraber@gmail.com
 D: help on Windows development
+
+N: Justin Venus
+E: justin.venus@gmail.com
+D: Solaris support
+I: 18
 
 N: Dave Daeschler
 C: USA
@@ -78,7 +84,7 @@ I: 248
 
 N: Amoser
 E: amoser@google.com
-I: 266, 267
+I: 266, 267, 340
 
 N: Matthew Grant
 E: matthewgrant5@gmail.com
@@ -117,3 +123,121 @@ I: 316
 N: Riccardo Murri
 C: Italy
 I: 318
+
+N: Florent Xicluna
+E: florent.xicluna@gmail.com
+I: 319
+
+N: Michal Spondr
+E: michal.spondr
+I: 313
+
+N: Jean Sebastien
+E: dumbboules@gmail.com
+I: 344
+
+N: Rob Smith
+W: http://www.kormoc.com/
+I: 341
+
+N: Youngsik Kim
+W: https://plus.google.com/101320747613749824490/
+I: 317
+
+N: Gregory Szorc
+W: https://plus.google.com/116873264322260110710/posts
+I: 323
+
+N: André Oriani
+E: aoriani@gmail.com
+I: 361
+
+N: clackwell
+E: clackwell@gmail.com
+I: 356
+
+N: m.malycha
+E: m.malycha@gmail.com
+I: 351
+
+N: John Baldwin
+E: jhb@FreeBSD.org
+I: 370
+
+N: Jan Beich
+E: jbeich@tormail.org
+I: 325
+
+N: floppymaster
+E: floppymaster@gmail.com
+I: 380
+
+N: Arfrever.FTA
+E: Arfrever.FTA@gmail.com
+I: 369, 404
+
+N: danudey
+E: danudey@gmail.com
+I: 386
+
+N: Adrien Fallou
+I: 224
+
+N: Gisle Vanem
+E: gisle.vanem@gmail.com
+I: 411
+
+N: thepyr0
+E: thepyr0@gmail.com
+I: 414
+
+N: John Pankov
+E: john.pankov@gmail.com
+I: 435
+
+N: Matt Good
+W: http://matt-good.net/
+I: 438
+
+N: Ulrich Klank
+E: ulrich.klank@scitics.de
+I: 448
+
+N: Josiah Carlson
+E: josiah.carlson@gmail.com
+I: 451, 452
+
+N: Raymond Hettinger
+D: namedtuple and lru_cache backward compatible implementations.
+
+N: Jason Kirtland
+D: backward compatible implementation of collections.defaultdict.
+
+M: Ken Seeho
+D: @cached_property decorator
+
+N: crusaderky
+E: crusaderky@gmail.com
+I: 470, 477
+
+E: alex@mroja.net
+I: 471
+
+N: Gautam Singh
+E: gautam.singh@gmail.com
+I: 466
+
+E: lhn@hupfeldtit.dk
+I: 476, 479
+
+N: Francois Charron
+E: francois.charron.1@gmail.com
+I: 474
+
+E: jtang@vahna.net
+I: 340
+
+N: Naveed Roudsari
+E: naveed.roudsari@gmail.com
+I: 421
+

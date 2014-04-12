@@ -1,28 +1,25 @@
 #!/usr/bin/env python
-#
-# $Id: _osx.py 1498 2012-07-24 21:41:28Z g.rodola $
-#
-# Copyright (c) 2009, Jay Loden, Giampaolo Rodola'. All rights reserved.
+
+# Copyright (c) 2009, Giampaolo Rodola'. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 """OSX specific tests.  These are implicitly run by test_psutil.py."""
 
-import unittest
-import subprocess
-import time
-import sys
 import os
 import re
+import subprocess
+import sys
+import time
 
 import psutil
 
 from psutil._compat import PY3
-from test_psutil import reap_children, get_test_subprocess, sh
+from test_psutil import (TOLERANCE, sh, get_test_subprocess, reap_children,
+                         retry_before_failing, unittest)
 
 
 PAGESIZE = os.sysconf("SC_PAGE_SIZE")
-TOLERANCE = 200 * 1024  # 200 KB
 
 
 def sysctl(cmdline):
@@ -37,6 +34,7 @@ def sysctl(cmdline):
         return int(result)
     except ValueError:
         return result
+
 
 def vm_stat(field):
     """Wrapper around 'vm_stat' cmdline utility."""
@@ -57,22 +55,14 @@ class OSXSpecificTestCase(unittest.TestCase):
     def tearDown(self):
         reap_children()
 
-    def assert_eq_w_tol(self, first, second, tolerance):
-        difference = abs(first - second)
-        if difference <= tolerance:
-            return
-        msg = '%r != %r within %r delta (%r difference)' \
-              % (first, second, tolerance, difference)
-        raise AssertionError(msg)
-
     def test_process_create_time(self):
-        cmdline = "ps -o lstart -p %s" %self.pid
+        cmdline = "ps -o lstart -p %s" % self.pid
         p = subprocess.Popen(cmdline, shell=1, stdout=subprocess.PIPE)
         output = p.communicate()[0]
         if PY3:
             output = str(output, sys.stdout.encoding)
         start_ps = output.replace('STARTED', '').strip()
-        start_psutil = psutil.Process(self.pid).create_time
+        start_psutil = psutil.Process(self.pid).create_time()
         start_psutil = time.strftime("%a %b %e %H:%M:%S %Y",
                                      time.localtime(start_psutil))
         self.assertEqual(start_ps, start_psutil)
@@ -108,23 +98,31 @@ class OSXSpecificTestCase(unittest.TestCase):
 
     def test_vmem_total(self):
         sysctl_hwphymem = sysctl('sysctl hw.memsize')
-        self.assertEqual(sysctl_hwphymem, psutil.TOTAL_PHYMEM)
+        self.assertEqual(sysctl_hwphymem, psutil.virtual_memory().total)
 
+    @retry_before_failing()
     def test_vmem_free(self):
         num = vm_stat("free")
-        self.assert_eq_w_tol(psutil.virtual_memory().free, num, TOLERANCE)
+        self.assertAlmostEqual(psutil.virtual_memory().free, num,
+                               delta=TOLERANCE)
 
+    @retry_before_failing()
     def test_vmem_active(self):
         num = vm_stat("active")
-        self.assert_eq_w_tol(psutil.virtual_memory().active, num, TOLERANCE)
+        self.assertAlmostEqual(psutil.virtual_memory().active, num,
+                               delta=TOLERANCE)
 
+    @retry_before_failing()
     def test_vmem_inactive(self):
         num = vm_stat("inactive")
-        self.assert_eq_w_tol(psutil.virtual_memory().inactive, num, TOLERANCE)
+        self.assertAlmostEqual(psutil.virtual_memory().inactive, num,
+                               delta=TOLERANCE)
 
+    @retry_before_failing()
     def test_vmem_wired(self):
         num = vm_stat("wired")
-        self.assert_eq_w_tol(psutil.virtual_memory().wired, num, TOLERANCE)
+        self.assertAlmostEqual(psutil.virtual_memory().wired, num,
+                               delta=TOLERANCE)
 
     # --- swap mem
 
@@ -148,7 +146,12 @@ class OSXSpecificTestCase(unittest.TestCase):
         self.assertEqual(tot1, tot2)
 
 
-if __name__ == '__main__':
+def test_main():
     test_suite = unittest.TestSuite()
     test_suite.addTest(unittest.makeSuite(OSXSpecificTestCase))
-    unittest.TextTestRunner(verbosity=2).run(test_suite)
+    result = unittest.TextTestRunner(verbosity=2).run(test_suite)
+    return result.wasSuccessful()
+
+if __name__ == '__main__':
+    if not test_main():
+        sys.exit(1)
